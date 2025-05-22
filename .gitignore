@@ -9,6 +9,8 @@ src/docs
 dist/
 *.egg-info*
 
+env
+
 externals
 support
 extensions
