@@ -103,4 +103,10 @@ if(APPLE OR MSVC)
     add_subdirectory(frontend/maxmsp/nn_tilde)
     add_subdirectory(frontend/maxmsp/mc.nn_tilde)
     add_subdirectory(frontend/maxmsp/mcs.nn_tilde)
+    
+    # nn.terrain:
+    add_subdirectory(frontend/maxmsp/nn.terrain_tilde)
+    add_subdirectory(frontend/maxmsp/nn.terrain.encode)
+    add_subdirectory(frontend/maxmsp/nn.terrain.record)
+    add_subdirectory(frontend/maxmsp/nn.terrain.gui)
 endif()

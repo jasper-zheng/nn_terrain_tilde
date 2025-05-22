@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <algorithm>
 
 template <class in_type, class out_type> class circular_buffer {
 public:
@@ -11,7 +12,8 @@ public:
   void get(out_type *output_array, int N);
   void fill(out_type val); 
   void reset();
-  size_t max_size() { return _max_size; } 
+  size_t max_size() { return _max_size; }
+  out_type get_no_pop();
 
 protected:
   std::unique_ptr<out_type[]> _buffer;
@@ -89,3 +91,6 @@ void circular_buffer<in_type, out_type>::reset() {
   _count = 0;
   _full = false;
 }
+
+template <class in_type, class out_type>
+out_type circular_buffer<in_type, out_type>::get_no_pop() {return _buffer[_tail];}
