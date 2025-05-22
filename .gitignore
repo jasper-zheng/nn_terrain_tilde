@@ -23,6 +23,7 @@ tests
 tmp
 .DS_Store
 
+build
 
 miniconda.sh
 
