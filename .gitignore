@@ -2,6 +2,7 @@
 src/externals
 src/frontend/tests
 src/tests
+.vs
 .vscode
 *libtorch
 *DS_Store*
@@ -21,8 +22,13 @@ tests
 
 tmp
 .DS_Store
-.vs
-.vscode
 
+
+miniconda.sh
 
 pretrained_models
+
+src/package-info.json
+src/pd_include
+src/support
+
