@@ -1,265 +1,310 @@
-![banner](https://github.com/acids-ircam/nn_tilde/raw/master/assets/banner.png)
+# Latent Terrain: Coordinates-to-Latents Generator for Neural Audio Autoencoders
 
-# Demonstration video
+> At the final stage of packaging up the repository, will get everything done by the end of May.  
+Once ready, a release tag will be added to the repository, with the external objects, example Max patches, instructions to compile.
 
-[![RAVE x nn~](http://img.youtube.com/vi/dMZs04TzxUI/mqdefault.jpg)](https://www.youtube.com/watch?v=dMZs04TzxUI)
+<img src="assets/overview.gif" width="600px"></img>
 
-# Installation
+*Latent terrain* is a coordinates-to-latents mapping model for neural audio autoencoders, can be used to build a mountainous and steep surface map for the autoencoder's latent space. A terrain produces continuous latent vectors in real-time, taking coordinates in the control space as inputs.  
 
-Grab the [latest release of nn~](https://github.com/acids-ircam/nn_tilde/releases/latest) ! Be sure to download the correct version for your installation.
+#### Table of Contents
 
-## MaxMSP
+- [What's a Neural Audio Autoencoder and why Latent Terrain?](#whats-a-neural-audio-autoencoder-and-why-latent-terrain)
+- [Demos](#demos)
+- [Compatibility & Installation](#compatibility-and-installation)
+- [Usage](#usage)
+  - [Building a customised terrain](#building-a-customised-terrain)
+    <!-- - [Terrain parameters](#terrain-parameters)
+    - [Training examples preparation](#training-examples-preparation)
+    - [Training](#training)
+    - [Saving (Checkpoints)](#saving-checkpoints) -->
+  - [Visualising a terrain](#visualising-a-terrain)
+  - [Programming trajectory playback](#programming-trajectory-playback)
+  - [Stylus mode](#stylus-mode)
+  - [Point-by-Point Steering](#point-by-point-steering)
+- [TODOs](#todos)
+- [Build Instructions](BuildInstructions.md)
+- [Acknowledgements](#acknowledgements)
 
-Uncompress the `.tar.gz` file in the Package folder of your Max installation, i.e. in `Documents/Max [your version]/Packages/`. You can then instantiate  an `nn~` object!  Alt-click the `nn~` object to open the help patch, or access the nn~ Overview patch in the Extras menu.
+## Need help!
 
-##### Mac alert : codesigned with IRCAM identity and not trigger MacOS quarantine ; if it does so,  please launch in the terminal : 
+Hi, this is Shuoyang (Jasper). `nn.terrain` is part of my ongoing PhD work on **Discovering Musical Affordances in Neural Audio Synthesis**, and part of the work has been (will be) on putting AI audio generators into the hands of composers/musicians.
 
-```bash
-cd "~/Max X/Packages/nn_tilde
-sudo codesign --deep --force --sign - support/*.dylib
-sudo codesign --deep --force --sign - externals/*/Contents/MacOS/*
-xattr -r -d com.apple.quarantine externals/*/Contents/MacOS/*  
-```
+Therefore, I would love to have you involved in it - if you have any feedback, a features request, a demo / a device / or a ^@#*$- made with nn.terrain, I would love to hear. If you would like to collaborate on anything, please leave a message in this form: https://forms.office.com/e/EJ4WHfru1A
 
-Alt+click on the `nn~` object to open the help patch, and follow the tabs to learn more about this project.
 
-## PureData
 
-Uncompress the `.tar.gz` file in the Package folder of your Pd installation, i.e. in `Documents/Pd/externals/`. You can then add a new path in the `Pd/File/Preferences/Path` menu pointing to the `nn_tilde` folder.
+## What's a Neural Audio Autoencoder and why Latent Terrain? 
 
-Similarly, the external should not be blocked on recent MacOS systems. It it still is, `cd` to the `nn_tilde` folder and fix with
+A neural audio autoencoder (such as [RAVE](https://github.com/acids-ircam/RAVE)) is an AI audio generation tool, it has two components: an encoder and a decoder.    
+ - The `encoder` compresses a piece of audio signal into a sequence of latent vectors (a **latent trajectory**). This compression happens in the time domain, so that the sampling rate goes from 44100Hz (audio sampling rate) to 21.5Hz (latent space sampling rate).   
+![img](assets/trajectory.jpg)   
 
-```bash
+ - The `decoder` takes the latent trajectory to produce a piece of audio signal. The decoder can also be used as a parametric synthesiser by manually navigating the latent space (i.e., **latent space walk**).  
 
-xattr -r -d com.apple.quarantine Documents/Pd/externals/nn_tilde
-sudo codesign --deep --force --sign - Documents/Pd/externals/nn_tilde/*.dylib
-sudo codesign --deep --force --sign - Documents/Pd/externals/nn_tilde/nn\~.pd_darwin
-```
+*Latent terrain* allows you to navigate latent space of the generative AI like walking on a terrain surface. It tailors the latent space to a low-dimensional (e.g., a 2D plane) control space. And this terrain surface is **nonlinear** (i.e., able to produce complex sequential patterns), **continuous** (i.e., allows for smooth interpolations), and **tailorable** (i.e., DIY your own materials with interactive machine learning).
 
-# Usage
-
-## Pretrained models
-
-At its core, `nn~` is a translation layer between Max/MSP or PureData and the [libtorch c++ interface for deep learning](https://pytorch.org/). Alone, `nn~` is like an empty shell, and **requires pretrained models** to operate. Since v1.6.0, you can download them directly through Forum IRCAM API. Alternatively, you can find a few [RAVE](https://github.com/acids-ircam/RAVE) models [here](https://acids-ircam.github.io/rave_models_download) or [here](https://huggingface.co/Intelligent-Instruments-Lab/rave-models). Few [vschaos2](https://github.com/acids-ircam/vschaos2) models are also available[here](https://www.dropbox.com/sh/avdeiza7c6bn2of/AAAGZsnRo9ZVMa0iFhouCBL-a?dl=0).
-
-Pretrained model for `nn~` are **torchscript files**, with a `.ts` extension. You can add these files to `nn_tilde/models` folders, or any place accessible through Max / Pd filesystem (Max: `Options/File Preferences`, PureData: `File/Preferences/Path`).
-
-**New** : since v1.6.0, some models are directly downloadable through IRCAM Forum API.
-
-Once this is done, you can load a model with `nn~` by providing its name as first argument (for example, here `isis.ts` located inside `nn_tilde/models` for Max, or among the PureData patch):  
+This repository is a set of Max externals to build, visualise, and program latent terrain:
 
 <table>
-  <tr>
-    <th width="50%">Max / MSP</th>
-    <th width="50%">PureData</th>
-  </tr>
-  <tr>
-    <td><img width="100%" src="assets/max_instance.png" /></td>
-    <td><img width="100%" src="assets/pd_instance.png" /></td>
-  </tr>
+<thead>
+<tr>
+<th>Object</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+
+<tr><td><code>nn.terrain~</code></td>
+<td> 
+
+ - Load, build, train, and save a terrain.  
+
+ - Perform the coordinates-to-latents mapping. 
+ </td>
+</tr>
+
+<tr><td><code>nn.terrain.encode</code></td>
+<td>
+
+ - Encode audio buffers into latent trajectories using a pre-trained audio autoencoder, to be used as training data for `nn.terrain~`.
+</td>
+</tr>
+
+<tr><td><code>nn.terrain.record</code></td>
+<td>
+
+ - Record latent trajectories to be used as training data for `nn.terrain~`.  
+</td>
+</tr>
+
+<tr><td><code>nn.terrain.gui</code></td>
+<td>
+
+ - Edit spatial trajectories to be used as training data for `nn.terrain~`. 
+ - Visualise the terrain.
+ - Create and program trajectory playbacks.
+</td>
+</tr>
+
+</tbody>
 </table>
 
-## Model information fetching
+## Demos
 
-## Model information fetching
+The projection from a latent space to a latent terrain is done by pairing latent trajectories and spatial trajectories on a 2D plane (or any low-dimensional space). After providing examples of inputs (spatial trajectories) and their corresponding outputs (latent trajectories), the terrain can be trained very quickly (~15s) using supervised machine learning.
 
-Coming with v1.6.0, the `nn.info` object allows model inspection and fetching avilable models for download on the IRCAM-API. With this object, you can get available methods and attributes for a given model. For example, you can see below that a RAVE model has three different methods : `encode`, `decode`, and `forward`.
+https://github.com/user-attachments/assets/17a306d2-791a-4322-9ec6-aa788713cbac
 
-<center>
-<img src="assets/max_nninfo.png"/>
-</center>
+Sound synthesising with latent terrain is similar to wave terrain synthesis, operating in the latent space of an audio autoencoder. An audio fragment can be synthesised by pathing through the terrain surface.  
 
-### Methods
+https://github.com/user-attachments/assets/2da6380f-272a-40ff-a595-07f7d4008e3b
 
-Models can have several _methods_, that correspond to several processing pipelines the model can achieve. Hence, each method can have a different number in inlets / outlets. The method is given as the third argument (for exemple, `decode` above), and equals `forward` by default.
+<!-- Constructing a terrain by defining the trajectories of audio fragments:  
+![cppn](./assets/terrain_training_cppn_s.gif)   
 
-### Attributes
+It also supports the point-by-point steering approach proposed by Vigliensoni and Fiebrink (2023):    
+![cppn](./assets/terrain_training_points_s.gif)    -->
 
-It is possible the internal state of the module through _attributes_, that are **model-dependent** and defined at exportation. Model attributes can be set using _messages_, with the following syntax:
+<!-- *Latent Terrain* is an algorithmic approach to dissecting the latent space of a neural audio autoencoder (e.g., [RAVE](https://github.com/acids-ircam/RAVE)) into a lower-dimensional (e.g., 2D), mountainous, and steep space. The dissected structure is a streamable "terrain", which can be used to access latent vectors given coordinates in the lower-dimensional space.
 
-```bash
-set ATTRIBUTE_NAME ATTRIBUTE_VAL_1 ATTRIBUTE_VAL_2
-```
+This is a (work-in-progress) Max external for sound synthesising with latent terrain, as well as creating letent terrains on-the-fly, using interactive machine learning.  
 
-Using Max/MSP and PureData graphical objects, this can lead to an intuitive way to modify the behavior of the model, as shown below where we have two model attributes (i.e. generation temperature and generation mode), and the special `enable` attribute.
+The external, demo Max patches, documentation and tutorials will be released soon. -->
+
+
+
+A presentation at the IRCAM Forum Workshops 2025 can be found in [this article](https://forum.ircam.fr/article/detail/latent-terrain-dissecting-the-latent-space-of-neural-audio-autoencoder-by-shuoyang-jasper-zheng/).  
+
+
+<!-- 
+https://github.com/user-attachments/assets/39dc648f-7c11-4669-895a-1f46999ddca1 -->
+
+
+
+## Compatibility and Installation
+
+This external works with [nn_tilde v1.5.6 (torch v2.0.0/2.0.1)](https://github.com/acids-ircam/nn_tilde/releases/tag/v1.5.6). If you have a `nn~` built from another torch version, you might have to build this yourself. See the [Build Instructions](BuildInstructions.md) documentation.  
+
+We only have MaxMSP version at the moment, sorry. Windows and arm64 macOS supported.
+
+### macOS
+
+Uncompress the `.tar.gz` file in the `Package` folder of your Max installation, which is usually in `~/Documents/Max 9/Packages/`.
+
+Reopen Max and you can find all nn.terrain objects. You might get a quarantine warning, proceed will disable this warning. If they still have trouble opening, or doesn't work correctly with nn_tilde, you might want to build the externals yourself, see [Build Instructions](BuildInstructions.md).  
+
+### Windows
+
+Uncompress the `.tar.gz` file in the `Package` folder of your Max installation, which is usually in `~/Documents/Max 9/Packages/`.
+
+Copy all `.dll` files in the package next to the ˋMax.exeˋ executable (if you have already done this for nn_tilde, you don't need to do this again).
+
+## Usage
+Here we briefly walk through the features/functionalities, while detailed walkthroughs can be found in the `.maxhelp` help file for each object.  
+
+
+### Building a customised terrain
+
+A terrain is built by pairing latent trajectories and coordinate trajectories. And then using a supervised machine learning algorithm to learn this pairing. Here are the steps:
+
+#### Terrain parameters  
+
+First, we'll define the dimensionality of the latent space and control space. This can be set by the first two arguments of the object. For instance, `nn.terrain~ 2 8` will create a terrain that takes 2 input signals and produces a 8-dimensional latent vector.  
+
+Arguments of `nn.terrain~`:
 
 <table>
-  <tr>
-    <th width="50%">Max / MSP</th>
-    <th width="50%">PureData</th>
-  </tr>
-  <tr>
-    <td><img width="100%" src="assets/max_attr.png" /></td>
-    <td><img width="100%" src="assets/pd_attr.png" /></td>
-  </tr>
+<thead>
+<tr>
+<th>Object</th>
+<th>Arguments</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+
+<tr><td rowspan=8>nn.terrain~</td>
+<td>control_dim</td>
+<td>Number of input channels</td>
+</tr>
+
+<tr><td>latent_dim</td>
+<td>Number of output channels, this should usually be the dimensionality of the autoencoder's latent space.</td>
+</tr>
+
+<tr><td>gauss_scale</td>
+<td> 
+(optional)  
+
+ - Gaussian scale of the Fourier feature mapping. A higher Gaussian scale leads to a noisy terrain, lower leads to smoother less-mountainous terrain. 
+ - A float value between 0.05 - 0.3 is suggested.   
+ - If the Gaussian scale is 0, the Fourier feature mapping layer will be removed, resulting in a very smooth (low-frequency) terrain, useful for point-by-point mode.</td>
+</tr>
+
+<tr><td>network_channel</td>
+<td>(optional) The number of neurons in each hidden layer. Defined by the network_channel argument. By default 128</td>
+</tr>
+
+<tr><td>feature_size</td>
+<td>(optional) The size of the random Fourier feature mapping, a higher feature size is suggested when using a high-dimensional control space. By default 256</td>
+</tr>
+
+<tr><td>buffer_size</td>
+<td>(optional) The inference of the terrain will happen once per buffer size, keeping it the same with the buffer size of nn~ is suggested.</td>
+</tr>
+
+</tbody>
 </table>
 
-**New in 1.6.0**
-
-- Buffers (Max) / Array (Pd) attribute setting to allow the `.ts` model to access internal buffers / arrays.
-- `torch.Tensor` attributes can be set through Max/MSP `[array]`, allowing to set attributes of unlimited size.
-
-## Buffer configuration
-
-Internally, `nn~` has a circular buffer mechanism that helps maintain a reasonable computational load, if the given buffer size is greater tha 0. You can modify its size through the use of an additional integer after the method declaration, as shown below. 
-
-**Important**For Windows users, the circular buffer is automatically disabled because of a memory leak [that occurs when a TorchScript model is used in a separate thread](https://github.com/pytorch/pytorch/issues/24237). Unfortunately, this implies a much lower efficiency in terms of CPU.  
-
-<table>
-  <tr>
-    <th width="50%">Max / MSP</th>
-    <th width="50%">PureData</th>
-  </tr>
-  <tr>
-    <td><img width="100%" src="assets/max_buffer.png" /></td>
-    <td><img width="100%" src="assets/pd_buffer.png" /></td>
-  </tr>
-</table>
-
-## Multichannel (Max/MSP)
-
-The Max/MSP release of `nn~` includes additional externals, namely `mc.nn~` and `mcs.nn~`, allowing the use of the multicanal abilities of Max 8+ to simplify the patching process with `nn~` and optionally decrease the computational load.
-
-In the following examples, two audio files are being encoded then decoded by the same model in parallel
-
-![regular](assets/max_regular.png)
-
-This patch can be improved both visually _and_ computationally speaking by using `mc.nn~` and using _batch operations_
-
-![mc](assets/max_mc.png)
-
-Using `mc.nn~` we build the multicanal signals **over the different batches**. In the example above, each multicanal signal will have 2 different canals. We also propose the `mcs.nn~` external that builds multicanal signals **over the different dimensions**, as shown in the example below
-
-![mcs](assets/max_mcs.png)
-
-In the example above, the two multicanals signals yielded by the `nn~ rave encode 2` object have 16 canals each, corresponding to the 16 latent dimensions. This can help patching, while keeping the batching abilities of `mc.nn~` by creating an explicit number of inlets / oulets corresponding to the number of examples we want to process in parallel.
-
-To recap, the regular `nn~` operates on a single example, and has as many inlets / outlets as the model has inputs / outputs. The `mc.nn~` external is like `nn~`, but can process multiple examples _at the same time_. The `mcs.nn~` variant is a bit different, and can process mulitple examples at the same time, but will **have one inlet / outlet per examples**.
-
-## Lazy mode (Max/MSP)
-
-Since v1.6.0, nn~ has a `void` mode, that allows to initialise it with a fixed number of inlets / outlets, and may be attached to a model afterwards. This can be done with the `void` special model, that enables this lazy initialisation.
-
-<center>
-<img src="assets/max_void.png" width="30%"/>
-</center>
-
-## Special messages
-
-### enable [0 / 1]
-
-Enable / Disable computation to save up computation without deleting the model. Similar to how a _bypass_ function would work.
-
-### reload
-
-Dynamically reloads the model. Can be useful if you want to periodically update the state of a model during a training.
-
-### dump
-
-Prints methods / attributes of the loaded model. 
-
-### print_available_models
-
-Prints models downloadable through API.
-
-### download
-
-Download a model from the API. 
-
-### delete
-
-Deletes a downloaded model.
-
-### load
-
-Change dynamically the incoming model.
-
-### method
-
-Change dynamically the used method.
-
-# Build Instructions
-
-## macOS
-
-- Download the latest libtorch (CPU) [here](https://pytorch.org/get-started/locally/) and unzip it to a known directory
-- Run the following commands:
-
-```bash
-git clone https://github.com/acids-ircam/nn_tilde --recurse-submodules
-cd nn_tilde
-curl -L https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh > miniconda.sh
-chmod +x ./miniconda.sh
-bash ./miniconda.sh -b -u -p ./env
-source ./env/bin/activate
-pip install -r requirements.txt
-conda install -c conda-forge curl
-mkdir build
-cd build
-mkdir puredata_include
-curl -L https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h -o puredata_include/m_pd.h
-export CC=$(brew --prefix llvm)/bin/clang
-export CXX=$(brew --prefix llvm)/bin/clang++
-cd build
-cmake ../src -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX -DCMAKE_PREFIX_PATH=../env/lib/python3.12/site-packages/torch -DCMAKE_BUILD_TYPE=Release -DPUREDATA_INCLUDE_DIR=../puredata_include -DCMAKE_OSX_ARCHITECTURES=arm64
-cmake --build . --config Release
-```
-please replace `arm64` in the last line by `x86_64` if you want compile for 64 bits. You can remove `-DPUREDATA_INCLUDE_DIR=../puredata_include` to compile only for Max. The Max package is produced in `src/`,  and Pd external in `build/frontend/puredata/Release`.
 
 
-## Windows
 
-- Download Libtorch (CPU) and dependencies [here](https://pytorch.org/get-started/locally/) and unzip to a known directory.
-- Install [Visual Studio Redistribuable](https://learn.microsoft.com/fr-fr/cpp/windows/latest-supported-vc-redist?view=msvc-170) 
-- Run the following commands (here for Git Bash):
-```bash
-git clone https://github.com/acids-ircam/nn_tilde --recurse-submodules
-cd nn_tilde
-curl -L https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-2.6.0%2Bcpu.zip > "libtorch.zip"
-unzip libtorch.zip
-mkdir pd
-cd pd
-curl -L https://msp.ucsd.edu/Software/pd-0.55-2.msw.zip -o pd.zip
-unzip pd.zip
-mv pd*/src .
-mv pd*/bin .
-cd ..
-git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg 
-./bootstrap-vcpkg.bat
-./vcpkg.exe integrate install
-./vcpkg.exe install curl
-cd ..
-mkdir build
-cd build
-mkdir puredata_include
-curl -L https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h -o puredata_include/m_pd.h
-export CC=$(brew --prefix llvm)/bin/clang
-export CXX=$(brew --prefix llvm)/bin/clang++
-cd build
-cmake ../src -G "Visual Studio 17 2022" -DTorch_DIR=../libtorch/share/cmake/Torch -DPUREDATA_INCLUDE_DIR=../pd/src -DPUREDATA_BIN_DIR=../pd/bin -A x64
-cmake --build . --config Release
-```
-You can remove `-DPUREDATA_INCLUDE_DIR=../puredata_include` to compile only for Max. The Max package is produced in `src/`,  and Pd external in `build/frontend/puredata/Release`.
 
-## Raspberry Pi
+#### Training examples preparation   
 
-**not availble in v1.6.0, planned in next version ; please take previous versions if needed**
+ - Gethering **latent trajectories**:
+   - Create a `nn.terrain.encode` and put audio sample(s) in `buffer~` or `polybuffer~`
+   - Use `append` message to add buffers to the encoder, message `encode` to convert them to latent trajectory in a dictionary file.
+   - Additionally, see `nn.terrain.encode`'s help file for how to encode samples from a `playlist~` object.
+![img](assets/dataset1.jpg)
 
-While nn~ can be compiled and used on Raspberry Pi, you may have to consider using lighter deep learning models. We currently only support 64bit OS.
+ - Gethering **spatial trajectories**:
+   - Create a `nn.terrain.gui` and set the `UI Task (task)` attribute to `Dataset`
+   - Define the target length of trajectories (in ms) using a list message or an `append` message. 
+   - Draw lines as trajectories.  
+![img](assets/dataset2.jpg)
 
-Install nn~ for PureData using
+#### Training  
+ - Terrain training can be done within the `nn.terrain~` object:
+   - Send the data dictionaries we got in previous step to `nn.terrain~`
+   - The terrain will be trained for 10 epochs once a `train` message is received (this number can be changed by the `training_epoch` attribute).
+   - `route` the last outlet to `loss` and `epoch` to inspect the training loss.
+   ![img](assets/training.jpg)
+   - <table>
+     <thead>
+      <tr>
+      <th>Object</th>
+      <th>Training Attributes</th>
+      <th>Description</th>
+      </tr>
+      </thead>
+      <tbody>
 
-```bash
-curl -s https://raw.githubusercontent.com/acids-ircam/nn_tilde/master/install/raspberrypi.sh | bash
-```
+      <tr><td rowspan=8>nn.terrain~</td>
+      <td>training_batchsize</td>
+      <td>Batch size used to train the neural network in the terrain (i.e., how many coordinate-latent pairs). Just a matter of memory consumption, won't affect the result too much.</td>
+      </tr>
 
-# Funding
+      <tr><td>training_epoch</td>
+      <td>How many epochs will be trained once a <code>train</code> message is received.</td>
+      </tr>
 
-This work is led at IRCAM, and has been funded by the following projects
+      <tr><td>training_lr</td>
+      <td>Learning rate used when training.</td>
+      </tr>
 
-* [ANR MakiMono](https://acids.ircam.fr/course/makimono/)
-* [ACTOR](https://www.actorproject.org/)
-* [DAFNE+](https://dafneplus.eu/) N° 101061548
+      <tr><td>training_worker</td>
+      <td>The same effect as PyTorch dataloader's <code>num_workers</code>, won't affect the result too much.</td>
+      </tr>
 
-<img src="https://ec.europa.eu/regional_policy/images/information-sources/logo-download-center/eu_co_funded_en.jpg" width=200px/>
+     </tbody>
+     </table>
+ - After you feel good about the training loss, the terrain is good to go.
+
+#### Saving (Checkpoints)
+
+ - Use the `checkpoint` message to save the tarrain to a `.pt` file. Saving name and path can be set in attributes.
+ - Load a terrain `.pt` file by giving its file name as an argument.
+![img](assets/save.jpg)
+
+### Visualising a terrain 
+
+Since the control space is 2D, the latent space can be visualised by sampling the control space across a closed interval (i.e., width and height in this example). Use the `plot_interval` message to do this:  
+ - `plot_interval` for 2D plane takes 6 arguments:
+ - lower and upper bound values of the x and y axes in the control space (these usually are the same as the `values_bound` attribute of `nn.terrain.gui`)
+ - resolution of the x and y axes (these usually are the same as the width and height of `nn.terrain.gui`)
+![img](assets/plot.jpg)
+### Programming trajectory playback  
+
+You can create trajectories to navigate the terrain. This trajectory playback can be controled be a signal input. 
+ - Set the 'UI Tasks' (`task`) attribute of nn.terrain.gui to 'play'.
+ - This behaviour is similar to the `play~` object in Max.
+ - <img src="assets/play.gif" width="320px"></img>
+
+
+### Stylus mode  
+
+Set the 'UI Tasks' (`task`) attribute of nn.terrain.gui to 'stylus' to use it as a trackpad. If you are using a tablet/stylus, it also supports the pen pressure.
+
+
+https://github.com/user-attachments/assets/2dd7edea-583d-410b-8b09-7aa1eec09bfa
+
+### Point-by-Point Steering  
+
+[todo] It also supports the [point-by-point steering approach](https://vigliensoni.com/portfolio/42-vigliensoni23steering/) proposed by Vigliensoni and Fiebrink (2023).
+
+## TODOs   
+
+- [✕︎] Load and inference scripted mapping model exported bt torchscript.   
+- [✔︎] Display terrain visualisation.  
+  - [✔︎] Greyscale (one-channel)   
+  - [✔︎] Multi-channel (yes but no documentation atm)   
+- [✔︎] Interactive training of terrain models in Max MSP.   
+- [✔︎] Customised configuration of Fourier-CPPNs (Tancik et al., 2020).  
+- [✕︎] Example patches, tutorials...  
+- [✕︎] PureData
+
+## Build Instructions  
+
+If the externals have trouble opening in Max, or doesn't work correctly with nn_tilde, you might want to build the externals yourself, see the [Build Instructions](BuildInstructions.md) documentation.
+
+## Acknowledgements
+
+ - Shuoyang Zheng, the author of this work, is supported by UK Research and Innovation [EP/S022694/1].
+
+ - This is built on top of acids-ircam's [nn_tilde](https://github.com/acids-ircam/nn_tilde), with a lot of reused code including the cmakelists templates, `backend.cpp`, `circular_buffer.h`, and the model performing loop in `nn.terrain_tilde.cpp`.  
+ - Caillon, A., Esling, P., 2022. Streamable Neural Audio Synthesis With Non-Causal Convolutions. https://doi.org/10.48550/arXiv.2204.07064  
+ - Tancik, M., Srinivasan, P.P., Mildenhall, B., Fridovich-Keil, S., Raghavan, N., Singhal, U., Ramamoorthi, R., Barron, J.T., Ng, R., 2020. Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional Domains. NeurIPS.  
+ - Vigliensoni, G., Fiebrink, R., 2023. Steering latent audio models through interactive machine learning, in: In Proceedings of the 14th International Conference on Computational Creativity.  
+
