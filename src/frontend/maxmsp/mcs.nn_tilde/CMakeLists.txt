@@ -25,7 +25,7 @@ execute_process(
 		OUTPUT_VARIABLE VERSION
 		OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-message(${VERSION})
+message(STATUS ${VERSION})
 add_definitions(-DVERSION="${VERSION}")
 
 

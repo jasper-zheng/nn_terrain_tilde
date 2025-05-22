@@ -24,6 +24,10 @@
 #define None at::indexing::None
 #define Slice torch::indexing::Slice
 
+#define CPU torch::kCPU
+#define CUDA torch::kCUDA
+#define MPS torch::kMPS
+
 using namespace c74::min;
 using namespace c74::min::ui;
 
@@ -105,16 +109,29 @@ public:
     argument<symbol> path_arg{this, "model_path", "Path to the pretrained model (encoder).", true};
     argument<int> latent_dim_arg {this, "latent_dim", "(Optional) Dimensionality of the autoencoder's latent space."};
     
-    
+    c10::DeviceType m_device;
   // ENABLE / DISABLE ATTRIBUTE
     attribute<bool> gpu{this, "gpu", true,
         description{"Enable / disable gpu usage when available"},
         setter{
             [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-                if (m_is_backend_init)
+                if (m_is_backend_init){
                     m_model->use_gpu(bool(args[0]));
+                    if (bool(args[0])) {
+                      if (torch::hasCUDA()) {
+                        m_device = CUDA;
+                      } else if (torch::hasMPS()) {
+                        m_device = MPS;
+                      } else {
+                        m_device = CPU;
+                      }
+                    } else {
+                      m_device = CPU;
+                    }
+                }
                 // TODO: t_model->use_gpu(bool(args[0]));
                 return args;
+                    
             }
         }
     };
@@ -290,7 +307,7 @@ public:
             try {
                 torch::NoGradGuard no_grad;
                 for (int i(0); i < cat_tensor_in_trim.size(0); i++){
-                    at::Tensor input_tensor = cat_tensor_in_trim.index({i}).unsqueeze(0).to(m_model->get_device());
+                    at::Tensor input_tensor = cat_tensor_in_trim.index({i}).unsqueeze(0).to(m_device);
                     std::vector<torch::jit::IValue> inputs = {input_tensor};
                     
                     at::Tensor tensor_out = m_model->get_model().get_method(e_method)(inputs).toTensor();
@@ -298,8 +315,8 @@ public:
                     tensor_out = tensor_out.index({0}).permute({1,0}).to(torch::kCPU);
                     tensor_out_trim.push_back(tensor_out);
                 }
-                cat_tensor_in_left = cat_tensor_in_left.to(m_model->get_device());
-                std::vector<torch::jit::IValue> inputs_left = {cat_tensor_in_left};
+//                cat_tensor_in_left = cat_tensor_in_left.to(m_device);
+                std::vector<torch::jit::IValue> inputs_left = {cat_tensor_in_left.to(m_device)};
                 at::Tensor tensor_out_left = m_model->get_model().get_method(e_method)(inputs_left).toTensor();
                 tensor_out_left = tensor_out_left.index({0}).permute({1,0}).to(torch::kCPU);
                 tensor_out_trim.push_back(tensor_out_left);
@@ -376,9 +393,15 @@ int nn_terrain::load_encoder(string path_str){
         error();
         return 0;
     }
+      if (torch::hasCUDA()) {
+        m_device = CUDA;
+      } else if (torch::hasMPS()) {
+        m_device = MPS;
+      } else {
+        m_device = CPU;
+      }
     m_model->use_gpu(gpu);
     
-
     m_higher_ratio = m_model->get_higher_ratio();
 
     // GET MODEL'S METHOD PARAMETERS
@@ -394,16 +417,6 @@ int nn_terrain::load_encoder(string path_str){
     m_out_dim = params[2];
     m_out_ratio = params[3];
     cout << "m_in_dim: " << m_in_dim << "\n m_in_ratio: " << m_in_ratio << "\n m_out_dim: " << m_out_dim << "\n m_out_ratio: " << m_out_ratio << endl;
-
-    // Calling forward in a thread causes memory leak in windows.
-    // See https://github.com/pytorch/pytorch/issues/24237
-//#ifdef _WIN32
-//    m_use_thread = false;
-//#endif
-    
-//    if (m_use_thread) {
-//        m_compute_thread = std::make_unique<std::thread>(model_perform_loop, this);
-//    }
     
     return m_out_dim;
 }
