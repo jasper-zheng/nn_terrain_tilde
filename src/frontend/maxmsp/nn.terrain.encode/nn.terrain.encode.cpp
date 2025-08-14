@@ -24,57 +24,10 @@
 #define None at::indexing::None
 #define Slice torch::indexing::Slice
 
-#define CPU torch::kCPU
-#define CUDA torch::kCUDA
-#define MPS torch::kMPS
-
 using namespace c74::min;
 using namespace c74::min::ui;
 
-
-//std::string min_devkit_path() {
-//#ifdef WIN_VERSION
-//    char    pathstr[4096];
-//    HMODULE hm = nullptr;
-//
-//    if (!GetModuleHandleExA(
-//        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&min_devkit_path, &hm)) {
-//        int ret = GetLastError();
-//        fprintf(stderr, "GetModuleHandle() returned %d\n", ret);
-//    }
-//    GetModuleFileNameA(hm, pathstr, sizeof(pathstr));
-//
-//    // path now is the path to this external's binary, including the binary filename.
-//    auto filename = strrchr(pathstr, '\\');
-//    if (filename)
-//        *filename = 0;
-//    auto externals = strrchr(pathstr, '\\');
-//    if (externals)
-//        *externals = 0;
-//
-//    path p{ pathstr };    // convert to Max path
-//    return p;
-//#endif    // WIN_VERSION
-//
-//#ifdef MAC_VERSION
-//    CFBundleRef this_bundle = CFBundleGetBundleWithIdentifier(CFSTR("com.jasperzheng.nn-terrain-encode"));
-//    CFURLRef    this_url = CFBundleCopyExecutableURL(this_bundle);
-//    char        this_path[4096];
-//    CFURLGetFileSystemRepresentation(this_url, true, reinterpret_cast<UInt8*>(this_path), 4096);
-//    string this_path_str{ this_path };
-//    CFRelease(this_url);
-//    
-//    // we now have a path like this:
-//    // /Users/tim/Materials/min-devkit/externals/min.project.mxo/Contents/MacOS/min.project"
-//    // so we need to chop off 5 slashes from the end
-//
-//    auto iter = this_path_str.find("/externals/nn.terrain.encode.mxo/Contents/MacOS/nn.terrain.encode");
-//    this_path_str.erase(iter, strlen("/externals/nn.terrain.encode.mxo/Contents/MacOS/nn.terrain.encode"));
-//    return this_path_str;
-//#endif    // MAC_VERSION
-//}
-
-class nn_terrain : public object<nn_terrain>,public vector_operator<> {
+class nn_terrain : public object<nn_terrain>, public vector_operator<>{
     
 public:
     MIN_DESCRIPTION{"Encoding audio buffers to latent vectors with neural audio autoencoder"};
@@ -83,10 +36,11 @@ public:
 
     inlet<>    append_inlet      { this, "(append) Append buffers to the buffer pool", "message"};
     
-    outlet<>    dataset_output      { this, "(dictionary) Latent vectors encoded from buffers, to be sent to nn.terrain", "dictionary"};
-    outlet<>    latent_len_output   { this, "(list) Number of latents along each trajectory", "list"};
-    outlet<>    latent_len_all_output   { this, "(int) Total number of latents along all trajectories", "int"};
     outlet<>    log_output          { this, "(dictionary) List of buffers in the pool", "dictionary"};
+    outlet<>    latent_len_output   { this, "(list) Number of latents along each trajectory", "list"};
+//    outlet<>    latent_len_all_output   { this, "(int) Total number of latents along all trajectories", "int"};
+
+    outlet<>    dataset_output      { this, "(dictionary) Latent vectors encoded from buffers, to be sent to nn.terrain", "dictionary"};
 
     nn_terrain(const atoms &args = {});
     ~nn_terrain();
@@ -101,40 +55,43 @@ public:
     
     c74::min::path m_path;
     int m_in_dim{1}, m_in_ratio{1}, m_out_dim{8}, m_out_ratio{2048}, m_higher_ratio{2048};
-
     void operator()(audio_bundle input, audio_bundle output);
-    
+
     int load_encoder(string path_str);
     
     argument<symbol> path_arg{this, "model_path", "Path to the pretrained model (encoder).", true};
     argument<int> latent_dim_arg {this, "latent_dim", "(Optional) Dimensionality of the autoencoder's latent space."};
     
-    c10::DeviceType m_device;
+    
   // ENABLE / DISABLE ATTRIBUTE
     attribute<bool> gpu{this, "gpu", true,
         description{"Enable / disable gpu usage when available"},
         setter{
             [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-                if (m_is_backend_init){
+                if (m_is_backend_init)
                     m_model->use_gpu(bool(args[0]));
-                    if (bool(args[0])) {
-                      if (torch::hasCUDA()) {
-                        m_device = CUDA;
-                      } else if (torch::hasMPS()) {
-                        m_device = MPS;
-                      } else {
-                        m_device = CPU;
-                      }
-                    } else {
-                      m_device = CPU;
-                    }
-                }
                 // TODO: t_model->use_gpu(bool(args[0]));
                 return args;
-                    
             }
         }
     };
+    // TODO: add this:
+//    attribute<atoms> buffer_list_attr {this, "buffer_list", "",
+//        description{""},
+//        setter{
+//            [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
+//                return args;
+//            }
+//        }
+//    };
+
+    message<> bang { this, "bang", "Post the encoded latents.",
+        MIN_FUNCTION {
+            dataset_output.send("dictionary", training_data.name());
+            return {};
+        }
+    };
+
 
     int latent_dim = 8;
     
@@ -156,36 +113,81 @@ public:
     
     int latent_lengths_all = 0;
     int buffer_count = 0;
-    message<> m_set_bufferlist {this, "append", "Add a buffer to the buffer pool",
+    message<> m_append_bufferlist {this, "append", "Add a buffer to the buffer pool",
         MIN_FUNCTION {
             if (args.size() != 1){
                 cerr << "args size " << args.size() << " error, args size should be 1" << endl;
                 return {};
             }
-            buffer_dict[buffer_count] = std::string(args[0]);
-            buffer_dict.touch();
-            
+            atom buffer_name = std::string(args[0]);
             buffers.push_back(std::make_unique<buffer_reference>(this));
-            atom buffer_name = buffer_dict[buffer_count];
             buffers[buffer_count]->set(buffer_name);
             
             buffer_lock<false> b {*buffers[buffer_count]};
+            
+            if (!b.valid()){
+                cerr << "buffer is not valid" << endl;
+                buffers.pop_back();
+                return {};
+            }
+            
+            buffer_dict[buffer_count] = std::string(args[0]);
+            buffer_dict.touch();
+            
             int latents_count = static_cast<int>(std::ceil(b.frame_count() / static_cast<float>(m_out_ratio)));
             latent_lengths.push_back(latents_count);
             latent_lengths_all += latents_count;
             
             buffer_count++;
             log_output.send("dictionary", buffer_dict.name());
-            latent_len_all_output.send(latent_lengths_all);
             latent_len_output.send(latent_lengths);
             return {};
         }
     };
     
-    
+    message<> m_set_bufferlist {this, "anything", "Use a list of buffer names to set buffers in the buffer pool (it will overwrite previous buffers)",
+        MIN_FUNCTION {
+            buffer_dict.clear();
+            buffer_dict.touch();
+            buffer_count = 0;
+            
+            buffers.erase(std::remove_if(buffers.begin(), buffers.end(), [](auto const& pi){ return *pi % 2 == 0; }), buffers.end());
+            buffers.clear();
+            
+            latent_lengths_all = 0;
+            latent_lengths.clear();
+            
+            for (int i = 0; i < args.size(); i++){
+                atom buffer_name = std::string(args[i]);
+                
+                buffers.push_back(std::make_unique<buffer_reference>(this));
+                buffers[buffer_count]->set(buffer_name);
+                
+                buffer_lock<false> b {*buffers[buffer_count]};
+                
+                if (!b.valid()){
+                    cerr << "buffer " << buffer_name << " is not valid" << endl;
+                    buffers.pop_back();
+                    continue;
+                }
+                
+                buffer_dict[buffer_count] = std::string(args[i]);
+                
+                int latents_count = static_cast<int>(std::ceil(b.frame_count() / static_cast<float>(m_out_ratio)));
+                latent_lengths.push_back(latents_count);
+                latent_lengths_all += latents_count;
+                
+                buffer_count++;
+            }
+            buffer_dict.touch();
+            log_output.send("dictionary", buffer_dict.name());
+            latent_len_output.send(latent_lengths);
+            return {};
+        }
+    };
     
     message<> dictionary { this, "dictionary",
-        "Use a dictionary to gather training data for the terrain",
+        "A dictionary of buffer names, key name should be 'buffers'",
         MIN_FUNCTION {
             c74::max::t_symbol    **keys = NULL;
             long        numkeys = 0;
@@ -197,8 +199,6 @@ public:
                 string key_str = std::string(keys[i]->s_name);
                 atom d_data = d[key_str];
                 min_dict d_data_dict = {d_data};
-//                atom count = c74::max::dictionary_getentrycount(d_data_dict.m_instance);
-                
                 if (key_str == "coordinates"){
                     cout << "please send coordinates directly to nn.terrain" << endl;
                 } else if (key_str == "buffers"){
@@ -227,14 +227,11 @@ public:
             if (keys){
                 c74::max::dictionary_freekeys(d.m_instance, numkeys, keys);
             }
-            latent_len_all_output.send(latent_lengths_all);
             latent_len_output.send(latent_lengths);
-//            traj_len_output.send(dataset_counts[0]);
             return {};
         }
     };
 
-    std::mutex m_model_mutex;
     message<> create_dataset_from_buffers {this, "encode", "Encode buffers in the pool to a sequence of latent vectors",
         MIN_FUNCTION {
             
@@ -243,21 +240,24 @@ public:
                 return {};
             }
             if (buffers.empty()){
-                
                 cerr << "no buffers loaded" << endl;
                 return {};
             }
-            // ==============
-//            return {};
             std::vector<at::Tensor> tensor_in;
             std::vector<int> latent_lens;
+            int valid_buffers = 0;
             try{
                 // TODO: need a better way to convert buffers to tensors
                 for (int i(0); i < buffers.size(); i++) {
                     buffer_lock<false> b {*buffers[i]};
-                    
-//                    vector<float> buffer_data(b.lookup(0, 0), b.lookup(b.frame_count()-1, 0));
-                    
+                    if (!b.valid()){
+                        cerr << "buffer " << i << " is not valid" << endl;
+                        continue;
+                    }
+                    if (b.frame_count() == 0){
+                        cerr << "buffer " << i << " is empty" << endl;
+                        continue;
+                    }
                     vector<float> buffer_data;
                     for (int j(0); j < b.frame_count(); j++){
                         float buffer_data_p = b.lookup(j, 0);
@@ -275,12 +275,16 @@ public:
                     at::Tensor zero_fill = torch::zeros({1,1,zeros});
                     buffer_tensor = torch::cat({buffer_tensor, zero_fill}, 2);
                     tensor_in.push_back(buffer_tensor);
+                    valid_buffers+= 1;
                 }
             } catch (const std::exception &e) {
                 cerr << e.what() << endl;
                 return {};
             }
-//            return {};
+            if (valid_buffers == 0){
+                cerr << "no valid buffers found" << endl;
+                return {};
+            }
             auto cat_tensor_in = torch::cat(tensor_in, 2); // -> [1, 1, num_samples]
             
             // batching, in case the buffers are too long:
@@ -301,23 +305,22 @@ public:
             std::vector<at::Tensor> tensor_out_trim;
             at::Tensor cat_tensor_out;
 //            return {};
-//            std::unique_lock<std::mutex> model_lock(m_model->m_model_mutex);
-            std::unique_lock<std::mutex> model_lock(m_model_mutex);
+            std::unique_lock<std::mutex> model_lock(m_model->m_model_mutex);
 //            torch::NoGradGuard no_grad;
             try {
                 torch::NoGradGuard no_grad;
                 for (int i(0); i < cat_tensor_in_trim.size(0); i++){
-                    at::Tensor input_tensor = cat_tensor_in_trim.index({i}).unsqueeze(0).to(m_device);
+                    at::Tensor input_tensor = cat_tensor_in_trim.index({i}).unsqueeze(0).to(m_model->m_device);
                     std::vector<torch::jit::IValue> inputs = {input_tensor};
                     
-                    at::Tensor tensor_out = m_model->get_model().get_method(e_method)(inputs).toTensor();
-//                    tensor_out = tensor_out.clone();
+                    at::Tensor tensor_out = m_model->m_model.get_method(e_method)(inputs).toTensor();
+                    
                     tensor_out = tensor_out.index({0}).permute({1,0}).to(torch::kCPU);
                     tensor_out_trim.push_back(tensor_out);
                 }
-//                cat_tensor_in_left = cat_tensor_in_left.to(m_device);
-                std::vector<torch::jit::IValue> inputs_left = {cat_tensor_in_left.to(m_device)};
-                at::Tensor tensor_out_left = m_model->get_model().get_method(e_method)(inputs_left).toTensor();
+                cat_tensor_in_left = cat_tensor_in_left.to(m_model->m_device);
+                std::vector<torch::jit::IValue> inputs_left = {cat_tensor_in_left};
+                at::Tensor tensor_out_left = m_model->m_model.get_method(e_method)(inputs_left).toTensor();
                 tensor_out_left = tensor_out_left.index({0}).permute({1,0}).to(torch::kCPU);
                 tensor_out_trim.push_back(tensor_out_left);
                 
@@ -326,15 +329,13 @@ public:
                 model_lock.unlock();
             } catch (const std::exception &e) {
                 std::string str = e.what();
-                cerr << str << endl;
                 if (str.size() > 1000) {
                         str.erase(0, 1000);
                     }
                 cerr << str << endl;
-                model_lock.unlock();
+                
                 return {};
             }
-//            return {};
             
             latent_dict.clear();
             
@@ -376,6 +377,52 @@ public:
             return {};
         }
     };
+    
+    message<> reload_m {this, "reload", "Reload a model",
+        MIN_FUNCTION {
+            
+            if (args.size() != 1) {
+                cerr << "wrong number of argments" << endl;
+                return {};
+            }
+            if (args.size() == 1) {
+                if (args[0].a_type == 3){
+                    
+                    try {
+                        m_model.reset();
+                        m_model = std::make_unique<Backend>();
+                    } catch (...) {
+                        }
+                    auto model_path = std::string(args[0]);
+                    if (model_path.substr(model_path.length() - 3) != ".ts")
+                      model_path = model_path + ".ts";
+                    m_path = path(model_path);
+                    try {
+                        if (m_model->load(std::string(m_path),samplerate())) {
+                            cerr << "error during loading" << endl;
+                            error();
+                            return {};
+                        }
+                    }
+                        catch (...) {
+                        }
+                    
+                    try {
+                        m_model->use_gpu(gpu);
+                        m_higher_ratio = m_model->get_higher_ratio();
+                    } catch (...) {
+                        
+                    }
+                    
+                } else {
+                    cerr << "argument should be a path" << endl;
+                    return {};
+                }
+            }
+            cout << "nn setup finished" << endl;
+            return {};
+        }
+    };
 };
 
 
@@ -393,15 +440,9 @@ int nn_terrain::load_encoder(string path_str){
         error();
         return 0;
     }
-      if (torch::hasCUDA()) {
-        m_device = CUDA;
-      } else if (torch::hasMPS()) {
-        m_device = MPS;
-      } else {
-        m_device = CPU;
-      }
     m_model->use_gpu(gpu);
     
+
     m_higher_ratio = m_model->get_higher_ratio();
 
     // GET MODEL'S METHOD PARAMETERS
