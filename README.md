@@ -14,7 +14,7 @@ For nn_tilde 1.6.0, externals in nn_terrain are supposed to be compiled with nn_
 - Run the following commands:
 
 ```bash
-git clone https://github.com/acids-ircam/nn_tilde --recurse-submodules
+git clone https://github.com/jasper-zheng/nn_terrain_tilde.git --recurse-submodules
 cd nn_tilde
 curl -L https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh > miniconda.sh
 chmod +x ./miniconda.sh
@@ -40,7 +40,7 @@ please replace `arm64` in the last line by `x86_64` if you want compile for 64 b
 - Install [Visual Studio Redistribuable](https://learn.microsoft.com/fr-fr/cpp/windows/latest-supported-vc-redist?view=msvc-170) 
 - Run the following commands (here for Git Bash):
 ```bash
-git clone https://github.com/acids-ircam/nn_tilde --recurse-submodules
+git clone https://github.com/jasper-zheng/nn_terrain_tilde.git --recurse-submodules
 cd nn_tilde
 curl -L https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-2.6.0%2Bcpu.zip > "libtorch.zip"
 unzip libtorch.zip
@@ -61,8 +61,6 @@ mkdir build
 cd build
 mkdir puredata_include
 curl -L https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h -o puredata_include/m_pd.h
-export CC=$(brew --prefix llvm)/bin/clang
-export CXX=$(brew --prefix llvm)/bin/clang++
 cd build
 cmake ../src -G "Visual Studio 17 2022" -DTorch_DIR=../libtorch/share/cmake/Torch -DPUREDATA_INCLUDE_DIR=../pd/src -DPUREDATA_BIN_DIR=../pd/bin -A x64
 cmake --build . --config Release

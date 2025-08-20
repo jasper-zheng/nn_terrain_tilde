@@ -48,3 +48,18 @@ endif()
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 
 
+if (APPLE) # SEARCH FOR TORCH DYLIB IN THE LOADER FOLDER
+	set_target_properties(${PROJECT_NAME} PROPERTIES
+		BUILD_WITH_INSTALL_RPATH FALSE
+		# LINK_FLAGS "-Wl,-rpath,@loader_path/"
+		LINK_FLAGS "-Wl"
+	)
+
+	add_custom_command(
+		TARGET ${PROJECT_NAME}
+		POST_BUILD 
+		COMMAND ${CMAKE_COMMAND} -E copy  "/Users/jasperrr/miniforge3/envs/pt250/ssl/cert.pem" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+		COMMAND ${CMAKE_SOURCE_DIR}/../env/bin/python ${CMAKE_SOURCE_DIR}/../install/dylib_fix.py -p "$<TARGET_FILE:${PROJECT_NAME}>" -o "${CMAKE_SOURCE_DIR}/support" -l "${torch_dir}/libtorch" "${CMAKE_BINARY_DIR}/_deps" "${CMAKE_SOURCE_DIR}/../env" "${HOMEBREW_PREFIX}" --sign_id "${SIGN_ID}"
+		COMMENT "Fixing libraries, certificates, permissions, codesigning, quarantine"
+	)
+endif()

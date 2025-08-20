@@ -126,6 +126,7 @@ if (APPLE) # SEARCH FOR TORCH DYLIB IN THE LOADER FOLDER
 	add_custom_command(
 		TARGET ${PROJECT_NAME}
 		POST_BUILD 
+		# COMMAND ${CMAKE_COMMAND} -E copy  "/Users/jasperrr/miniforge3/envs/pt250/ssl/cert.pem" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_COMMAND} -E copy  "${CMAKE_SOURCE_DIR}/../env/ssl/cert.pem" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_SOURCE_DIR}/../env/bin/python ${CMAKE_SOURCE_DIR}/../install/dylib_fix.py -p "$<TARGET_FILE:${PROJECT_NAME}>" -o "${CMAKE_SOURCE_DIR}/support" -l "${torch_dir}/libtorch" "${CMAKE_BINARY_DIR}/_deps" "${CMAKE_SOURCE_DIR}/../env" "${HOMEBREW_PREFIX}" --sign_id "${SIGN_ID}"
 		COMMENT "Fixing libraries, certificates, permissions, codesigning, quarantine"
@@ -137,32 +138,3 @@ if (MSVC)
 	set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 endif()
 
-
-
-# if (APPLE) # COPY TORCH DYLIB IN THE LOADER FOLDER
-# add_custom_command( 
-# 		TARGET ${PROJECT_NAME} 
-# 		POST_BUILD 
-# 		COMMAND cp "${TORCH_INSTALL_PREFIX}/lib/*.dylib" "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS/" 
-# 		COMMENT "Copy Torch Libraries" 
-# 	)
-
-# if (CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
-# 	add_custom_command( 
-# 		TARGET ${PROJECT_NAME} 
-# 		POST_BUILD 
-# 		COMMAND "codesign" "--force" "--deep" "-s" "-" "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo"
-# 		COMMENT "Codesign external" 
-# 	)
-# endif()
-# endif()
-
-# if (MSVC) # COPY TORCH DLL IN THE LOADER FOLDER
-# add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E copy_directory "${TORCH_INSTALL_PREFIX}/lib/" ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/
-# )
-# endif()
-
-# if (MSVC)
-# 	set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
-# endif()
