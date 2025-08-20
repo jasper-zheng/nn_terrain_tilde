@@ -6,7 +6,7 @@ For installation and documentation, please see [https://jasper-zheng.github.io/n
 
 ## Build Instructions  
 
-For nn_tilde 1.6.0, externals in nn_terrain are supposed to be compiled with nn_tilde, therefore we made this into a forked repository from nn_tilde, and we copied the instructions from the original repository. By following these repository, you will get all externals in nn_tilde and nn_terrain.
+For nn_tilde 1.6.0, externals in `nn.terrain~` are supposed to be compiled with `nn~`, therefore we made this into a forked repository from nn_tilde, and we copied the instructions from the original repository. By following these repository, you will get all MaxMSP externals in `nn~` and `nn.terrain~`. However, `nn.terrain~` doesn't have a PureData version at this point.
 
 ## macOS
 
@@ -15,7 +15,7 @@ For nn_tilde 1.6.0, externals in nn_terrain are supposed to be compiled with nn_
 
 ```bash
 git clone https://github.com/jasper-zheng/nn_terrain_tilde.git --recurse-submodules
-cd nn_tilde
+cd nn_terrain_tilde
 curl -L https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh > miniconda.sh
 chmod +x ./miniconda.sh
 bash ./miniconda.sh -b -u -p ./env
