@@ -26,6 +26,9 @@ std::string tensor_to_str(torch::Tensor &tsr) {
   return ss.str(); 
 }
 
+FCPPN::FCPPN() : m_loaded(0), m_device(CPU), m_use_gpu(false) {
+    at::init_num_threads();
+  }
 
 Backend::Backend() : m_loaded(0), m_device(CPU), m_use_gpu(false) {
   at::init_num_threads();
@@ -611,4 +614,92 @@ ModelInfo Backend::get_model_info() {
     model_lock.unlock();
     throw "error fetching model information for model " + m_path + ". Caught error : " + e.what();
   }
+}
+
+void FCPPN::use_gpu(bool value) {
+    std::unique_lock<std::mutex> model_lock(m_model_mutex);
+    if (value) {
+        if (torch::hasCUDA()) {
+          std::cout << "sending model to cuda" << std::endl;
+          m_device = CUDA;
+        } else if (torch::hasMPS()) {
+          std::cout << "sending model to mps" << std::endl;
+          m_device = MPS;
+        } else {
+          std::cout << "sending model to cpu" << std::endl;
+          m_device = CPU;
+        }
+    } else {
+        m_device = CPU;
+    }
+    m_model->to(m_device);
+    sample_tensor = sample_tensor.to(m_device);
+    model_lock.unlock();
+}
+
+bool FCPPN::save(std::string save_path, std::string save_name, int m_in_dim, int m_out_dim,
+                    int m_cmax, float m_gauss_scale, int m_mapping_size) {
+//    std::unique_lock<std::mutex> model_lock(m_model_mutex);
+    try {
+        m_model->to(CPU);
+        // TODO: this is not a save path:
+        torch::serialize::OutputArchive archive;
+        m_model->save(archive);
+//        archive << value;
+        
+        archive.write("m_in_dim", torch::tensor(m_in_dim));
+        archive.write("m_out_dim", torch::tensor(m_out_dim));
+        archive.write("m_cmax", torch::tensor(m_cmax));
+        archive.write("m_gauss_scale", torch::tensor(m_gauss_scale));
+        archive.write("m_mapping_size", torch::tensor(m_mapping_size));
+
+        // Save the archive to the specified file path
+        std::string src_path_str = (std::filesystem::path(save_path) / save_name).string();
+        archive.save_to(src_path_str);
+        
+        m_model->to(m_device);
+        return true;
+    } catch (const std::exception &e) {
+        m_model->to(m_device);
+        throw e;
+        return false;
+    }
+}
+
+void FCPPN::init_optimizer(float lr) {
+    optimizer.reset();
+    optimizer = std::make_unique<torch::optim::Adam>(m_model->parameters(), lr);
+    optimizer_init = true;
+}
+
+float FCPPN::train_for(int epoch){
+    std::unique_lock<std::mutex> model_lock(m_model_mutex);
+    m_model->train();
+    size_t batch_count = 0;
+    float loss_log = 0.0;
+    for (int i(0); i < epoch; i++){
+        for (auto& batch : *data_loader) {
+            optimizer->zero_grad();
+            torch::Tensor batch_data = batch.data.to(m_device);
+            torch::Tensor prediction = m_model->forward(batch_data);
+            
+            torch::Tensor batch_target = batch.target.to(m_device);
+            
+            torch::Tensor loss = torch::mse_loss(prediction, batch_target).to(m_device);
+            loss.backward();
+            
+            optimizer->step();
+            
+            loss_log += loss.to(torch::kCPU).item<float>();
+            
+            batch_count++;
+        }
+    }
+    m_model->eval();
+    model_lock.unlock();
+    if (batch_count == 0){
+        throw std::runtime_error("no batches were found for training");
+    }
+    loss_log /= batch_count;
+    return loss_log;
 }

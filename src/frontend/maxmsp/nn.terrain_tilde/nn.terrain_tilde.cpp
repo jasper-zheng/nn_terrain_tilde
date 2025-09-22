@@ -71,27 +71,6 @@ std::string min_devkit_path() {
 #endif    // MAC_VERSION
 }
 
-
-class CustomDataset : public torch::data::datasets::Dataset<CustomDataset> {
-private:
-    torch::Tensor data, targets;
-    
-public:
-    // Constructor
-    CustomDataset(torch::Tensor data, torch::Tensor targets)
-        : data(data), targets(targets) {}
-    
-    // Get size of dataset
-    torch::optional<size_t> size() const override {
-        return data.size(0);
-    }
-
-    // Get a single data sample
-    torch::data::Example<> get(size_t index) override {
-        return {data[index], targets[index]};
-    }
-};
-
 class nn_terrain : public object<nn_terrain>, public vector_operator<> {
     
 public:
@@ -130,9 +109,10 @@ public:
 
     // AUDIO PERFORM
     bool m_use_thread{true}, m_should_stop_perform_thread{false};
-    std::unique_ptr<std::thread> m_compute_thread{nullptr};
-    std::binary_semaphore m_data_available_lock{0};
-    std::binary_semaphore m_result_available_lock{1};
+    std::unique_ptr<std::thread> m_train_thread{nullptr}, m_compute_thread{nullptr};
+    std::binary_semaphore m_should_train_lock{0}, m_should_plot_lock{0};
+    std::binary_semaphore m_finish_train_lock{1}, m_finish_plot_lock{1};
+    
 
     atoms create_dataloader();
     bool load_param_from_file(string model_path, torch::serialize::InputArchive &archive);
@@ -141,7 +121,10 @@ public:
     void cppn_infer(float *, std::vector<float *>);
 //    atoms freeze_terrain(int width_x, int height_y, string terrain_name, int stride);
     
-    at::Tensor sampled_tensor_in;
+    static void model_train_loop(nn_terrain *nn_instance);
+    static void model_plot_loop(nn_terrain *nn_instance);
+    
+//    at::Tensor sample_tensor;
     min_dict sampled_dict{symbol(true)};
     min_dict terrain_dict{symbol(true)};
     string sampled_str;
@@ -149,7 +132,7 @@ public:
     int x_res_prev{0}, y_res_prev{0}, plot_resolution_prev{0}, c_prev{0};
     void sample_interval(float x_lo, float x_hi, int x_res,
                          float y_lo, float y_hi, int y_res, int c);
-    void create_sampled_tensor_in();
+    void create_sample_tensor();
     
     float twoPi = 4 * acos(0.0);
     
@@ -182,7 +165,7 @@ public:
         }
     };
     
-    message<> m_sample_interval {this, "plot_interval", "Sample the terrain across a closed interval to plot into the GUI, only 2D interval dimension is supported at the moment.   <br /><br />Args:  <br />1D [not implemented]: lo, hi, resolution;  <br />2D: values at left, top, right, bottom, x_resolution, y_resolution, color_channel (optional, default 1)",
+    message<> m_sample_interval {this, "plot_interval", "Sample the terrain across a closed interval to plot into the GUI, only 2D interval dimension is supported at the moment.   <br /><br />Args:  <br />1D [not implemented]: lo, hi, resolution;  <br />2D: values at left, top, right, bottom, x_resolution, y_resolution, latent_channel (optional, default 0)",
         MIN_FUNCTION {
             //args:
             // x_lo, x_hi, y_lo, y_hi, stride, latent_clamp_min, latent_clamp_max
@@ -191,7 +174,7 @@ public:
                 cerr << "plot_interval: 1D sampling not implemented" << endl;
                 return {};
             } else if (args.size() == 6) {
-                sample_interval(args[0], args[2], args[4], args[1], args[3], args[5], 1);
+                sample_interval(args[0], args[2], args[4], args[1], args[3], args[5], 0);
                 return {};
             } else if (args.size() == 7) {
                 sample_interval(args[0], args[2], args[4], args[1], args[3], args[5], args[6]);
@@ -202,7 +185,8 @@ public:
         }
     };
 
-    attribute<int,threadsafe::undefined,limit::clamp> plot_resolution {this, "plot_resolution", 1, title{"Plot Resolution"}, description {"(int) 1~16"},range{{1, 16}}};
+    attribute<int,threadsafe::undefined,limit::clamp> plot_resolution {this, "plot_resolution", 1, title{"Plot Resolution"}, description {"(int) stride 1~16"},range{{1, 16}}};
+    attribute<bool> plot_colour {this, "plot_multi_channel", false, title{"Plot Multi-Channel"}, description {"(bool) Plot multiple latent channels at once (only support the adjacent 4 channels at the moment)"}};
     
     attribute<number,threadsafe::undefined,limit::clamp> lr{ this, "training_lr", 0.001, title{"Training Learning Rate"}, description{"learning rate when training the nn"}, range{{0.0001, 0.1}}, category{"Training"}};
     attribute<int,threadsafe::undefined,limit::clamp> batch_size{ this, "training_batchsize", 32, title{"Training Batch Size"}, description{"batch size when training the nn"}, range{{4, 128}}, category{"Training"}};
@@ -212,7 +196,7 @@ public:
     
     message<> maxclass_setup{
         this, "maxclass_setup", [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << "nn.terrain~ version: 1.6.0 - torch version: " << TORCH_VERSION << endl;
+            cout << "nn.terrain~ version: 1.5.6.1 Oct-2025 - torch version: " << TORCH_VERSION << endl;
             return {};
         }
     };
@@ -286,9 +270,9 @@ public:
     };
     
 
-    std::unique_ptr<torch::data::StatelessDataLoader<torch::data::datasets::MapDataset<CustomDataset, torch::data::transforms::Stack<torch::data::Example<>>>, torch::data::samplers::RandomSampler>> data_loader;
+//    std::unique_ptr<torch::data::StatelessDataLoader<torch::data::datasets::MapDataset<LatentDataset, torch::data::transforms::Stack<torch::data::Example<>>>, torch::data::samplers::RandomSampler>> data_loader;
     
-    std::unique_ptr<torch::optim::Adam> optimizer;
+//    std::unique_ptr<torch::optim::Adam> optimizer;
     
     message<> model_summary {this, "model_summary", "Model summary",
         MIN_FUNCTION {
@@ -316,7 +300,6 @@ public:
                 if (dataset_updated){
                     dataset_summary = create_dataloader();
                 }
-                
                 if (dataset_summary[0] == 0){
                     cwarn << "no data loaded" << endl;
                     return {};
@@ -352,15 +335,12 @@ public:
                 if (cppn_init){
                     if (cppn_model->is_loaded()){
                         cppn_model->use_gpu(bool(args[0]));
-                        optimizer = std::make_unique<torch::optim::Adam>(cppn_model->m_model->parameters(), static_cast<float>(lr));
+//                        optimizer = std::make_unique<torch::optim::Adam>(cppn_model->m_model->parameters(), static_cast<float>(lr));
+                        cppn_model->init_optimizer(static_cast<float>(lr));
                         
-//                        if (total_epochs>0){
-//                            cwarn << "Changing device after any training will re-initialise the optimizer, be careful." << endl;
+//                        if (bool(args[0])){
+//                            cwarn << "Terrain is a very small neural network, it's performance on CPU can be better in some cases" << endl;
 //                        }
-                        if (bool(args[0])){
-                            cwarn << "The terrain model is a very small neural network without any convolutional layer, it's performance on CPU can be better in some cases" << endl;
-                        }
-//                        cout << "cppn gpu: " << bool(args[0]) << endl;
                     }
                 }
                 return args;
@@ -419,8 +399,9 @@ public:
             
             auto output_tensor = cppn_model->m_model->forward(test_inputs);
             
-            optimizer.reset();
-            optimizer = std::make_unique<torch::optim::Adam>(cppn_model->m_model->parameters(), static_cast<float>(lr));
+//            optimizer.reset();
+//            optimizer = std::make_unique<torch::optim::Adam>(cppn_model->m_model->parameters(), static_cast<float>(lr));
+            cppn_model->init_optimizer(static_cast<float>(lr));
             cout << "terrain setup finished" << endl;
             return {};
         }
@@ -428,8 +409,13 @@ public:
     
     
     int total_epochs = 0;
+    float loss_log = 0.0f;
     message<> train_cycle {this, "train", "Train the terrain model with one batch",
         MIN_FUNCTION {
+            if (!cppn_model->optimizer_init){
+                cerr << "optimizer not initialized" << endl;
+                return {};
+            }
             if (dataset_updated){
                 try{
                     dataset_summary = create_dataloader();
@@ -442,54 +428,45 @@ public:
                     return {};
                 }
             }
-            
-            cppn_model->m_model->train();
-            
-            size_t batch_count = 0;
-            float loss_log = 0.0;
-            try {
-                for (int i(0); i < epoch_per_cycle; i++){
-                    for (auto& batch : *data_loader) {
-                        
-                            optimizer->zero_grad();
-                            torch::Tensor batch_data = batch.data.to(cppn_model->m_device);
-                            torch::Tensor prediction = cppn_model->m_model->forward(batch_data);
-                            
-                            torch::Tensor batch_target = batch.target.to(cppn_model->m_device);
-                            
-                            torch::Tensor loss = torch::mse_loss(prediction, batch_target).to(cppn_model->m_device);
-                            loss.backward();
-                            
-                            optimizer->step();
-                            
-                            loss_log+=loss.to(torch::kCPU).item<float>();
-                        
-                        batch_count++;
-                    }
-                }
-            } catch (const std::exception &e) {
-                cerr << e.what() << endl;
-            }
-            if (batch_count == 0){
-                cerr << "error" << endl;
-                cppn_model->m_model->eval();
-                return {};
-            }
-            total_epochs += epoch_per_cycle;
-            loss_log /= batch_count;
-            cppn_model->m_model->eval();
-            
-            m_outlets[m_outlets.size()-1]->send("loss", loss_log);
-            m_outlets[m_outlets.size()-1]->send("epoch", total_epochs);
+            m_should_train_lock.release();
             return {};
         }
     };
+    
+    timer<timer_options::defer_delivery> m_train_timer { this,
+        MIN_FUNCTION {
+            if (m_finish_train_lock.try_acquire()) {
+                m_outlets[m_outlets.size()-1]->send("loss", loss_log);
+                m_outlets[m_outlets.size()-1]->send("epoch", total_epochs);
+            }
+            if (m_finish_plot_lock.try_acquire()) {
+                atom count = c74::max::dictionary_getentrycount(terrain_dict.m_instance);
+                if (count == 0){
+                    m_train_timer.delay(100);
+                    return {};
+                }
+                sampled_dict.touch();
+                m_outlets[m_outlets.size()-2]->send("dictionary", sampled_dict.name());
+            }
+            m_train_timer.delay(100);
+            return {};
+        }
+    };
+    
+    message<> train_cycle_thread {this, "train_test", "Train the terrain model with one batch",
+        MIN_FUNCTION {
+            m_should_train_lock.release();
+            return {};
+        }
+    };
+    
     attribute<symbol> external_path{ this, "saving_path", "none", title{"Saving Path"}, category{"Saving"}, setter{ MIN_FUNCTION{
         if (args[0] == "none") {
             symbol min_path_this = min_devkit_path();
             return { min_path_this };
         } else {
             try {
+                // Don't delete this:
                 min_path min_path_this = min_path(static_cast<string>(args[0]));
                 return { args[0] };
             } catch (...) {
@@ -532,9 +509,9 @@ public:
         }
     };
     
+    
 private:
     double m_one_over_samplerate    { 1.0 };
-    
 };
 
 atoms nn_terrain::create_dataloader() {
@@ -639,11 +616,10 @@ atoms nn_terrain::create_dataloader() {
         training_latents.max().item<float>()
     };
     
-    auto dataset = CustomDataset(training_coords,training_latents).map(torch::data::transforms::Stack<>());
-    
+    auto dataset = LatentDataset(training_coords, training_latents).map(torch::data::transforms::Stack<>());
     m_outlets[m_outlets.size()-1]->send("dataset_length", static_cast<float>(dataset.size().value()));
-    data_loader = torch::data::make_data_loader(std::move(dataset),
-                                                torch::data::DataLoaderOptions().batch_size(batch_size).workers(worker).drop_last(false));
+    cppn_model->data_loader = torch::data::make_data_loader(std::move(dataset),
+                                                            torch::data::DataLoaderOptions().batch_size(batch_size).workers(worker).drop_last(false));
     dataloader_ready = true;
     dataset_updated = false;
     
@@ -662,18 +638,63 @@ atoms nn_terrain::create_dataloader() {
     }};
 }
 
-void model_perform_loop(nn_terrain *nn_instance) {
-  std::vector<float *> in_model, out_model;
-
-  for (auto &ptr : nn_instance->m_in_model)
-    in_model.push_back(ptr.get());
-
-  for (auto &ptr : nn_instance->m_out_model)
-    out_model.push_back(ptr.get());
-
+void nn_terrain::model_train_loop(nn_terrain *nn_instance) {
   while (!nn_instance->m_should_stop_perform_thread) {
-      if (nn_instance->m_data_available_lock.try_acquire_for(std::chrono::milliseconds(200))) {
-          nn_instance->m_result_available_lock.release();
+      if (nn_instance->m_should_train_lock.try_acquire_for(std::chrono::milliseconds(100))) {
+          try {
+              float loss_log = nn_instance->cppn_model->train_for(nn_instance->epoch_per_cycle);
+              nn_instance->loss_log = loss_log;
+              nn_instance->total_epochs += nn_instance->epoch_per_cycle;
+              nn_instance->m_finish_train_lock.release();
+          } catch (const std::exception &e) {
+              nn_instance->cerr << e.what() << endl;
+          }
+      }
+  }
+}
+void nn_terrain::model_plot_loop(nn_terrain *nn_instance) {
+  while (!nn_instance->m_should_stop_perform_thread) {
+      if (nn_instance->m_should_plot_lock.try_acquire_for(std::chrono::milliseconds(100))) {
+          nn_instance->terrain_dict.clear();
+          std::unique_lock<std::mutex> model_lock(nn_instance->cppn_model->m_model_mutex);
+          int c = nn_instance->c_prev;
+          bool multi_channel = c + 4 < nn_instance->m_out_dim ? nn_instance->plot_colour : false;
+          try {
+              if (multi_channel){
+                  for (int i(0); i < nn_instance->cppn_model->sample_tensor.size(0); i++){ // y
+                      min_dict row_dict = {};
+                      at::Tensor tensor_in = nn_instance->cppn_model->sample_tensor.index({i});
+                      at::Tensor tensor_out = nn_instance->cppn_model->m_model->forward(tensor_in).to(torch::kFloat);
+                      
+                      for (int j(0); j < 4; j++){
+                          
+                          at::Tensor a_out = tensor_out.index({Slice(None), c+j}).to(torch::kCPU);
+                          
+                          auto ten_out_ptr = a_out.contiguous().data_ptr<float>();
+                          atoms result(ten_out_ptr, ten_out_ptr + nn_instance->cppn_model->sample_tensor.size(1));
+                          
+                          symbol skey{j};
+                          c74::max::dictionary_appendatoms(row_dict.m_instance, skey, result.size(), &result[0]);
+                      }
+                      nn_instance->terrain_dict[std::to_string(i)] = row_dict;
+                  }
+              } else {
+                  for (int i(0); i < nn_instance->cppn_model->sample_tensor.size(0); i++){ // y
+                      at::Tensor tensor_in = nn_instance->cppn_model->sample_tensor.index({i});
+                      at::Tensor tensor_out = nn_instance->cppn_model->m_model->forward(tensor_in).to(torch::kFloat);
+                      tensor_out = tensor_out.index({Slice(None), c}).to(torch::kCPU);
+                      auto ten_out_ptr = tensor_out.contiguous().data_ptr<float>();
+                      atoms result(ten_out_ptr, ten_out_ptr + nn_instance->cppn_model->sample_tensor.size(1));
+                      
+                      symbol skey{i};
+                      c74::max::dictionary_appendatoms(nn_instance->terrain_dict.m_instance, skey, result.size(), &result[0]);
+                  }
+              }
+              nn_instance->m_finish_plot_lock.release();
+          } catch (const std::exception &e) {
+              nn_instance->cerr << e.what() << endl;
+          }
+          model_lock.unlock();
       }
   }
 }
@@ -698,7 +719,7 @@ void nn_terrain::operator()(audio_bundle input, audio_bundle output) {
 }
 
 void nn_terrain::sample_interval(float x_lo, float x_hi, int x_res, float y_lo, float y_hi, int y_res, int c){
-    if (x_lo == x_lo_prev && x_hi == x_hi_prev && y_lo == y_lo_prev && y_hi == y_hi_prev && y_res == y_res_prev && x_res == x_res_prev && plot_resolution == plot_resolution_prev && c == c_prev){
+    if (x_lo == x_lo_prev && x_hi == x_hi_prev && y_lo == y_lo_prev && y_hi == y_hi_prev && y_res == y_res_prev && x_res == x_res_prev && plot_resolution == plot_resolution_prev){
         // do nothing
     } else {
         x_lo_prev = x_lo;
@@ -708,65 +729,20 @@ void nn_terrain::sample_interval(float x_lo, float x_hi, int x_res, float y_lo, 
         x_res_prev = x_res;
         y_res_prev = y_res;
         plot_resolution_prev = plot_resolution;
-        c_prev = c;
-        create_sampled_tensor_in();
+        create_sample_tensor();
     }
-    if (sampled_tensor_in.numel() == 0){
+    if (c < 0 || c >= m_out_dim){
+        cerr << "latent channel out of range" << endl;
         return;
     }
-    
-    terrain_dict.clear();
-    std::unique_lock<std::mutex> model_lock(cppn_model->m_model_mutex);
-    if (c == 1){
-        try {
-            for (int i(0); i < sampled_tensor_in.size(0); i++){ // y
-                at::Tensor tensor_in = sampled_tensor_in.index({i}).to(cppn_model->m_device);
-                at::Tensor tensor_out = cppn_model->m_model->forward(tensor_in).to(torch::kFloat).to(torch::kCPU);
-                tensor_out = tensor_out.index({Slice(None), 0});
-                auto ten_out_ptr = tensor_out.contiguous().data_ptr<float>();
-                atoms result(ten_out_ptr, ten_out_ptr + sampled_tensor_in.size(1));
-                
-                symbol skey{i};
-                c74::max::dictionary_appendatoms(terrain_dict.m_instance, skey, result.size(), &result[0]);
-            }
-        } catch (const std::exception &e) {
-            cerr << e.what() << endl;
-        }
-    } else if (c == 4) {
-        try {
-            
-            for (int i(0); i < sampled_tensor_in.size(0); i++){ // y
-                min_dict row_dict = {};
-                at::Tensor tensor_in = sampled_tensor_in.index({i}).to(cppn_model->m_device);
-                at::Tensor tensor_out = cppn_model->m_model->forward(tensor_in).to(torch::kFloat).to(torch::kCPU);
-                
-                for (int j(0); j < 4; j++){
-                    
-                    at::Tensor a_out = tensor_out.index({Slice(None), j}).clone().contiguous();
-                    
-                    auto ten_out_ptr = a_out.data_ptr<float>();
-                    atoms result(ten_out_ptr, ten_out_ptr + sampled_tensor_in.size(1));
-                    
-                    symbol skey{j};
-                    c74::max::dictionary_appendatoms(row_dict.m_instance, skey, result.size(), &result[0]);
-                }
-                terrain_dict[std::to_string(i)] = row_dict;
-            }
-        } catch (const std::exception &e) {
-            cerr << e.what() << endl;
-        }
-    }
-    model_lock.unlock();
-    
-    atom count = c74::max::dictionary_getentrycount(terrain_dict.m_instance);
-    if (count == 0){
+    c_prev = c;
+    if (cppn_model->sample_tensor.numel() == 0){
         return;
     }
-    sampled_dict.touch();
-    m_outlets[m_outlets.size()-2]->send("dictionary", sampled_dict.name());
+    m_should_plot_lock.release();
 }
 
-void nn_terrain::create_sampled_tensor_in(){
+void nn_terrain::create_sample_tensor(){
     vector<float> tensor_in_data;
     
     float x_stride = (x_hi_prev-x_lo_prev)/x_res_prev;
@@ -786,8 +762,8 @@ void nn_terrain::create_sampled_tensor_in(){
         cerr << "tensor_in_data size mismatch: " << tensor_in_data.size() << ", " << canvas_size << endl;
         return;
     }
-    sampled_tensor_in = torch::from_blob(tensor_in_data.data(), {canvas_height, canvas_width, 2}, torch::kFloat);
-    sampled_tensor_in = sampled_tensor_in.clone();
+    cppn_model->sample_tensor = torch::from_blob(tensor_in_data.data(), {canvas_height, canvas_width, 2}, torch::kFloat).clone().to(cppn_model->m_device);
+//    cout << "sampled tensor created: " << cppn_model->sample_tensor.sizes() << endl;
 }
 
 void nn_terrain::perform(audio_bundle input, audio_bundle output) {
@@ -832,22 +808,14 @@ void nn_terrain::cppn_infer(float* float_in, std::vector<float *> out_buffer){
         return;
     }
     at::Tensor tensor_in = torch::from_blob(float_in, {1, m_in_dim}, torch::kFloat);
+    tensor_in = tensor_in.to(cppn_model->m_device);
     
     std::unique_lock<std::mutex> model_lock(cppn_model->m_model_mutex);
-    tensor_in = tensor_in.to(cppn_model->m_device);
     at::Tensor tensor_out;
     try {
-        
         tensor_out = cppn_model->m_model->forward(tensor_in);
-        
         tensor_out = tensor_out.clamp_min({-100.0f}).clamp_max({100.0f});
-        
-        // -----------------------------
-        
-        tensor_out = tensor_out.repeat_interleave(m_buffer_size).reshape({1, m_out_dim, -1}); //2048 is buffersize
-        
-        // -----------------------------
-        
+        tensor_out = tensor_out.repeat_interleave(m_buffer_size).reshape({1, m_out_dim, -1});
     } catch (const std::exception &e) {
         cout << e.what() << endl;
     }
@@ -894,8 +862,6 @@ bool nn_terrain::load_param_from_file(string model_path, torch::serialize::Input
 
 nn_terrain::nn_terrain(const atoms &args){
     
-//    t_model = std::make_unique<CPPN>();
-
     // arguments:
     // (path)
     // (in_dim, out_dim)
@@ -1007,8 +973,7 @@ nn_terrain::nn_terrain(const atoms &args){
     
     auto output_tensor = cppn_model->m_model->forward(test_inputs);
     
-    optimizer = std::make_unique<torch::optim::Adam>(cppn_model->m_model->parameters(), static_cast<float>(lr));
-    
+    cppn_model->init_optimizer(static_cast<float>(lr));
     cppn_init = true;
 
   m_use_thread = false;
@@ -1024,7 +989,7 @@ nn_terrain::nn_terrain(const atoms &args){
     
   m_out_buffer = std::make_unique<circular_buffer<float, double>[]>(m_out_dim);
   for (int i(0); i < m_out_dim; i++) {
-      std::string output_label = "(signal) output value at latent space dimension: " + std::to_string(i);
+      std::string output_label = "(signal) output at latent space dimension: " + std::to_string(i);
       m_outlets.push_back(std::make_unique<outlet<>>(this, output_label, "signal"));
       m_out_buffer[i].initialize(m_buffer_size);
       m_out_model.push_back(std::make_unique<float[]>(m_buffer_size));
@@ -1035,8 +1000,9 @@ nn_terrain::nn_terrain(const atoms &args){
     
 
     external_path = min_devkit_path();
-//    external_path = std::string(min_path(min_path::system::max));
 //    cout << "path " << external_path << endl;
+    
+    create_sample_tensor();
     
     training_data["coordinates"] = coord_dict;
     training_data["latents"] = latent_dict;
@@ -1045,8 +1011,13 @@ nn_terrain::nn_terrain(const atoms &args){
     
     dataset_info_dict["coordinates"] = dataset_co_dict;
     dataset_info_dict["latents"] = dataset_lt_dict;
-
-    cout << "terrain setup finished" << endl;
+    
+    m_train_thread = std::make_unique<std::thread>(model_train_loop, this);
+    m_compute_thread = std::make_unique<std::thread>(model_plot_loop, this);
+    
+    m_train_timer.delay(200);
+    
+//    cout << "terrain setup finished" << endl;
 }
 
 nn_terrain::~nn_terrain() {
@@ -1055,8 +1026,15 @@ nn_terrain::~nn_terrain() {
     latent_dict.clear();
     coord_dict.clear();
     
-  m_should_stop_perform_thread = true;
-  if (m_compute_thread)
-    m_compute_thread->join();
+    m_should_stop_perform_thread = true;
+    if (m_train_thread){
+        m_train_thread->join();
+    }
+    if (m_compute_thread){
+        m_compute_thread->join();
+    }
+    m_train_timer.stop();
+    
+    
 }
 MIN_EXTERNAL(nn_terrain);

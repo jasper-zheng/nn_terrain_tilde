@@ -58,7 +58,7 @@ if (APPLE) # SEARCH FOR TORCH DYLIB IN THE LOADER FOLDER
 	add_custom_command(
 		TARGET ${PROJECT_NAME}
 		POST_BUILD 
-		COMMAND ${CMAKE_COMMAND} -E copy  "/Users/jasperrr/miniforge3/envs/pt250/ssl/cert.pem" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+		COMMAND ${CMAKE_COMMAND} -E copy  "${CMAKE_SOURCE_DIR}/../env/ssl/cert.pem" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_SOURCE_DIR}/../env/bin/python ${CMAKE_SOURCE_DIR}/../install/dylib_fix.py -p "$<TARGET_FILE:${PROJECT_NAME}>" -o "${CMAKE_SOURCE_DIR}/support" -l "${torch_dir}/libtorch" "${CMAKE_BINARY_DIR}/_deps" "${CMAKE_SOURCE_DIR}/../env" "${HOMEBREW_PREFIX}" --sign_id "${SIGN_ID}"
 		COMMENT "Fixing libraries, certificates, permissions, codesigning, quarantine"
 	)

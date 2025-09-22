@@ -6,6 +6,26 @@
 #include <torch/torch.h>
 #include <vector>
 
+class LatentDataset : public torch::data::datasets::Dataset<LatentDataset> {
+private:
+    torch::Tensor data, targets;
+    
+public:
+    // Constructor
+    LatentDataset(torch::Tensor data, torch::Tensor targets)
+        : data(data), targets(targets) {}
+    
+    // Get size of dataset
+    torch::optional<size_t> size() const override {
+        return data.size(0);
+    }
+
+    // Get a single data sample
+    torch::data::Example<> get(size_t index) override {
+        return {data[index], targets[index]};
+    }
+};
+
 struct FourierCPPNImpl : torch::nn::Module {
     
     FourierCPPNImpl(int in_dim, int out_dim, int c_max, float gauss_scale, int mapping_size) :
@@ -175,8 +195,13 @@ public:
     std::mutex m_model_mutex;
     c10::DeviceType m_device;
     bool m_use_gpu;
+    bool optimizer_init = false;
+    std::unique_ptr<torch::optim::Adam> optimizer;
+    at::Tensor sample_tensor;
     
     FCPPN();
+    
+    std::unique_ptr<torch::data::StatelessDataLoader<torch::data::datasets::MapDataset<LatentDataset, torch::data::transforms::Stack<torch::data::Example<>>>, torch::data::samplers::RandomSampler>> data_loader;
     
     bool create(int in_dim, int out_dim, int c_max, float gauss_scale, int mapping_size){
         try{
@@ -192,6 +217,6 @@ public:
     bool is_loaded() { return m_loaded; }
     void use_gpu(bool value);
     bool save(std::string save_path, std::string save_name, int m_in_dim, int m_out_dim, int m_cmax, float m_gauss_scale, int m_mapping_size);
-//    std::string load(std::string load_path);
-    
+    void init_optimizer(float lr);
+    float train_for(int epochs);
 };
