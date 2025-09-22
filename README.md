@@ -32,21 +32,12 @@ please replace `arm64` in the last line by `x86_64` if you want compile for 64 b
 
 ## Windows
 
-- Download Libtorch (CPU) and dependencies [here](https://pytorch.org/get-started/locally/) and unzip to a known directory.
+- Download Libtorch and dependencies [here](https://pytorch.org/get-started/locally/) and unzip it to the `torch` folder, make sure your folders look like `torch/libtorch/`.
 - Install [Visual Studio Redistribuable](https://learn.microsoft.com/fr-fr/cpp/windows/latest-supported-vc-redist?view=msvc-170) 
 - Run the following commands (here for Git Bash):
 ```bash
 git clone https://github.com/jasper-zheng/nn_terrain_tilde.git --recurse-submodules
 cd nn_terrain_tilde
-curl -L https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-2.6.0%2Bcpu.zip > "libtorch.zip"
-unzip libtorch.zip
-mkdir pd
-cd pd
-curl -L https://msp.ucsd.edu/Software/pd-0.55-2.msw.zip -o pd.zip
-unzip pd.zip
-mv pd*/src .
-mv pd*/bin .
-cd ..
 git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg 
 ./bootstrap-vcpkg.bat
@@ -55,9 +46,7 @@ cd vcpkg
 cd ..
 mkdir build
 cd build
-mkdir puredata_include
-curl -L https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h -o puredata_include/m_pd.h
-cmake ../src -G "Visual Studio 17 2022" -DTorch_DIR=../libtorch/share/cmake/Torch -DPUREDATA_INCLUDE_DIR=../pd/src -DPUREDATA_BIN_DIR=../pd/bin -A x64
+cmake ../src -G "Visual Studio 17 2022" -DTorch_DIR=../libtorch/share/cmake/Torch -A x64
 cmake --build . --config Release
 ```
-You can remove `-DPUREDATA_INCLUDE_DIR=../puredata_include` to compile only for Max. The Max package is produced in `src/`,  and Pd external in `build/frontend/puredata/Release`.
+
