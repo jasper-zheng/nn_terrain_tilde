@@ -33,4 +33,8 @@ src/package-info.json
 src/pd_include
 src/support
 
+vcpkg
 help
+torch
+
+

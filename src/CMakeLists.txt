@@ -76,24 +76,24 @@ execute_process(
 		OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-# if (NOT DEFINED NO_PUREDATA)
-set(NO_PUREDATA 0)
-# endif()
+# # if (NOT DEFINED NO_PUREDATA)
+# set(NO_PUREDATA 0)
+# # endif()
 
-if (NO_PUREDATA EQUAL 0)
-  if ("${PUREDATA_INCLUDE_DIR}" STREQUAL "")
-    set(PUREDATA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/pd_include")
-    execute_process(
-      COMMAND cmake -E make_directory "${PUREDATA_INCLUDE_DIR}"
-    )
-    file(DOWNLOAD "https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h" "${PUREDATA_INCLUDE_DIR}/m_pd.h")
-  endif()
-  add_subdirectory(frontend/puredata/nn_tilde) # PURE DATA EXTERNAL
-else()
-  if (UNIX AND NOT APPLE) 
-    message(FATAL_ERROR "NO_PUREDATA needs to be off on Linux, otherwise no task are available")
-  endif()
-endif()
+# if (NO_PUREDATA EQUAL 0)
+#   if ("${PUREDATA_INCLUDE_DIR}" STREQUAL "")
+#     set(PUREDATA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/pd_include")
+#     execute_process(
+#       COMMAND cmake -E make_directory "${PUREDATA_INCLUDE_DIR}"
+#     )
+#     file(DOWNLOAD "https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h" "${PUREDATA_INCLUDE_DIR}/m_pd.h")
+#   endif()
+#   add_subdirectory(frontend/puredata/nn_tilde) # PURE DATA EXTERNAL
+# else()
+#   if (UNIX AND NOT APPLE) 
+#     message(FATAL_ERROR "NO_PUREDATA needs to be off on Linux, otherwise no task are available")
+#   endif()
+# endif()
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../package-info.json.in "${CMAKE_CURRENT_SOURCE_DIR}/package-info.json")
 

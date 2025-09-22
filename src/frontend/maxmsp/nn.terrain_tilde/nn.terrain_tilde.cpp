@@ -196,7 +196,7 @@ public:
     
     message<> maxclass_setup{
         this, "maxclass_setup", [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << "nn.terrain~ version: 1.5.6.1 Oct-2025 - torch version: " << TORCH_VERSION << endl;
+            cout << "nn.terrain~ version: 1.6.0.1 Oct-2025 - torch version: " << TORCH_VERSION << endl;
             return {};
         }
     };

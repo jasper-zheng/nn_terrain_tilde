@@ -6,6 +6,7 @@
 #include <exception>
 #include <stdio.h>
 #include <stdlib.h>
+#include <filesystem>
 
 #define CPU torch::kCPU
 #define CUDA torch::kCUDA
